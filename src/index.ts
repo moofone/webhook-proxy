@@ -1,57 +1,75 @@
-import express from "express";
-import dotenv from "dotenv";
+const http = require("http");
+const https = require("https");
+const { URL } = require("url");
+const dotenv = require("dotenv");
+
+import { IncomingMessage, ServerResponse } from "http";
 
 dotenv.config();
 
-const app = express();
-const listenPort = process.env.LISTEN_PORT || "3000";
+const listenPort = Number(process.env.LISTEN_PORT) || 3000;
 const listenIp = process.env.LISTEN_IP || "127.0.0.1";
+const timeoutMs = Number(process.env.TIMEOUT_MS) || 2000;
 
 const forwardingUrls = process.env.FORWARDING_URLS?.split(",") || [];
-console.log(`forwardingUrls:${forwardingUrls}`);
+console.log(`${new Date().toISOString()} forwardingUrls:${forwardingUrls}`);
 
-app.use(express.json({ type: "*/*" }));
+const server = http.createServer((req: IncomingMessage, res: ServerResponse) => {
+  const buffers: Buffer[] = [];
 
-app.use((req, res, next) => {
-  console.log("", req.body);
-  next();
-});
+  req.on("data", (chunk) => {
+    buffers.push(chunk);
+  });
 
-app.all("*", async (req, res) => {
-  try {
-    const promises = forwardingUrls.map((url) => {
-      const headers = new Headers();
-      Object.entries(req.headers).forEach(([key, value]) => {
-        if (Array.isArray(value)) {
-          value.forEach((val) => headers.append(key, val));
-        } else {
-          headers.append(key, value || "");
-        }
-      });
+  req.on("end", () => {
+    const data = Buffer.concat(buffers);
+    // Assuming body is UTF-8 encoded text..
+    const bodyText = data.toString("utf-8");
+    console.log("Request body:", bodyText);
 
-      const contentType = req.headers["content-type"];
-      if (contentType) {
-        headers.set("Content-Type", contentType);
-      } else {
-        headers.set("Content-Type", "application/json");
-      }
-
-      return fetch(url, {
-        method: req.method,
-        body: JSON.stringify(req.body),
-        headers: headers,
-      });
+    forwardingUrls.forEach((forwardUrl) => {
+      forwardRequest(forwardUrl, req, data);
     });
 
-    await Promise.all(promises);
-    res.status(200).send("Request forwarded successfully");
-  } catch (error) {
-    console.error(error);
-    res.status(500).send("Error forwarding request");
-  }
+    res.writeHead(200);
+    res.end("Request forwarded successfully");
+  });
 });
 
-const port = parseInt(listenPort, 10);
-app.listen(port, listenIp, () => {
-  console.log(`Webhook forwarder listening at http://${listenIp}:${port}`);
+function forwardRequest(url: string, originalReq: IncomingMessage, data: Buffer) {
+  const urlObj = new URL(url);
+  const options = {
+    hostname: urlObj.hostname,
+    port: urlObj.port,
+    path: urlObj.pathname + urlObj.search,
+    method: originalReq.method,
+    headers: {
+      ...originalReq.headers,
+      "Content-Length": Buffer.byteLength(data),
+    },
+    timeout: timeoutMs,
+  };
+
+  const protocol = urlObj.protocol === "https:" ? https : http;
+
+  const req = protocol.request(options, (res: IncomingMessage) => {
+    res.setEncoding("utf8");
+    res.on("data", (chunk) => {
+      console.log(`${chunk}`);
+    });
+    res.on("end", () => {
+      console.log("No more data in response.");
+    });
+  });
+
+  req.on("error", (e: Error) => {
+    console.error(`problem with request: ${e.message}`);
+  });
+
+  req.write(data);
+  req.end();
+}
+
+server.listen(listenPort, listenIp, () => {
+  console.log(`Server running at http://${listenIp}:${listenPort}/`);
 });
