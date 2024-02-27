@@ -4,7 +4,8 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const app = express();
-const port = process.env.LISTEN_PORT;
+const listenPort = process.env.LISTEN_PORT || "3000";
+const listenIp = process.env.LISTEN_IP || "127.0.0.1";
 
 const forwardingUrls = process.env.FORWARDING_URLS?.split(",") || [];
 console.log(`forwardingUrls:${forwardingUrls}`);
@@ -50,6 +51,7 @@ app.all("*", async (req, res) => {
   }
 });
 
-app.listen(port, () => {
-  console.log(`Webhook forwarder listening at http://localhost:${port}`);
+const port = parseInt(listenPort, 10);
+app.listen(port, listenIp, () => {
+  console.log(`Webhook forwarder listening at http://${listenIp}:${port}`);
 });
