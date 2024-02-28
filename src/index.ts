@@ -25,7 +25,7 @@ const server = http.createServer((req: IncomingMessage, res: ServerResponse) => 
     const data = Buffer.concat(buffers);
     // Assuming body is UTF-8 encoded text..
     const bodyText = data.toString("utf-8");
-    console.log("Request body:", bodyText);
+    console.log(`${new Date().toISOString()} ${bodyText.slice(0, 60)}...`);
 
     forwardingUrls.forEach((forwardUrl) => {
       forwardRequest(forwardUrl, req, data);
@@ -55,10 +55,10 @@ function forwardRequest(url: string, originalReq: IncomingMessage, data: Buffer)
   const req = protocol.request(options, (res: IncomingMessage) => {
     res.setEncoding("utf8");
     res.on("data", (chunk) => {
-      console.log(`${chunk}`);
+      // console.log(`chunk:${chunk}`);
     });
     res.on("end", () => {
-      console.log("No more data in response.");
+      // console.log("No more data in response.");
     });
   });
 
